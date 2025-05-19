@@ -1,8 +1,11 @@
+from argparse import ArgumentParser
+import os
 from pprint import pprint
 from hubspot import Client
 
 TOKEN_PATH = './secrets/HUBSPOT_API_KEY'
 COMPANY_DOMAIN_TEMPLATE = '{}-{}.org' # e.g., FRC-1.org
+
 
 '''
 Parse the entries in the spreadsheet template
@@ -61,7 +64,11 @@ def get_hubspot_api_token() -> str:
 '''
 Execute the sequence of steps to bulk-create invoices from the template spreadsheet.
 '''
-def main():
+def main(file_path: str):
+  if not os.path.isfile(file_path):
+    print('Provided file (', file_path, ') does not exist', sep='')
+    return
+
   print('Beginning upload process...')
 
   api_token = get_hubspot_api_token()
@@ -112,4 +119,10 @@ def main():
   print('Bulk upload complete!')
 
 if __name__ == '__main__':
-  main()
+  parser = ArgumentParser()
+  parser.add_argument("-f", "--file", dest="filepath", help="path to file to read", metavar="FILE")
+  args = parser.parse_args()
+  if args.filepath is None:
+    print('File path was not provided')
+  else:
+    main(args.filepath)
