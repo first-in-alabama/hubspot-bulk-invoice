@@ -4,6 +4,7 @@ from pprint import pprint
 from hubspot import Client
 import numpy as np
 import pandas
+import requests
 
 SPREADSHEET_VALID_MESSAGE = 'PROBABLY GOOD'
 
@@ -23,6 +24,20 @@ SKU = 'sku'
 QUANTITY = 'quantity'
 DESCRIPTION = 'description'
 VALID = 'valid'
+
+SEASONS_API = 'https://my.firstinspires.org/usfirstapi/seasons/search'
+
+
+'''
+Get the current seasons for all FIRST programs
+'''
+def fetch_first_seasons() -> dict: 
+  seasons = None
+  try: seasons = { s['ProgramCode']: int(s['SeasonYearStart']) for s in requests.get(SEASONS_API).json() if s['IsCurrentSeason']}
+  except: 
+    print('Unable to retrieve current seasons from FIRST')
+    seasons = None
+  return seasons
 
 
 '''
@@ -216,7 +231,64 @@ def get_company_ids(client: Client, domains: set[str]) -> dict:
 Using the product SKUs, find the Product IDs
 '''
 def get_product_ids(client: Client, skus: set[tuple[str]]) -> dict:
-  return {}
+  print('Asking HubSpot for Product IDs...')
+  program_codes = set([x[1] for x in skus])
+  sku_keys = set([x[0] for x in skus])
+  current_seasons = fetch_first_seasons()
+  if len(program_codes) == 0 or current_seasons is None:
+    print('Unable to check seasonalities of one or more products')
+    return None
+  
+  body = {
+    'filterGroups': [
+      {
+        'filters': [
+          {
+            'propertyName': 'hs_sku',
+            'operator': 'IN',
+            'values': list(sku_keys)
+          }
+        ]
+      }
+    ],
+  	'properties': ['season_year', 'program', 'hs_sku']
+  }
+
+  api_response = None
+  try:
+    api_response = client.crm.products.search_api.do_search(public_object_search_request=body)
+  except Exception as e:
+    pprint(e)
+    print('Unable to query the Products from HubSpot')
+    api_response = None
+
+  if api_response is None: return None
+  if hasattr(api_response, 'errors') or not hasattr(api_response, 'results'): 
+    print('There were one or more errors associated with the Product FETCH call')
+    return None
+  
+  results = None
+  try:
+    results = { 
+      x.properties['hs_sku']: x.id 
+      for x in api_response.results 
+      if not x.archived and str(current_seasons[x.properties['program']]) == x.properties['season_year']
+    }
+  except:
+    print('One or more errors occurred when reading the Product lookup results')
+    results = None
+
+  if results is None or len(results) == 0:
+    print('Could not find any Product')
+    return None
+  
+  missing_skus = sku_keys.difference(set(results.keys()))
+  if missing_skus:
+    print('One or more SKUs could not be found for active products (for the current program season). Check season and spelling (SKUs are case sensitive):', ', '.join(missing_skus))
+    return None
+
+  print('Retrieved Product IDs!')
+  return results
 
 
 '''
@@ -277,7 +349,7 @@ def main(file_path: str):
     print('No team details provided')
     return
   
-  product_skus = set(list(zip(entries[SKU].str.lower(), entries[PROGRAM].str.lower())))
+  product_skus = set(list(zip(entries[SKU], entries[PROGRAM])))
   if len(product_skus) == 0:
     print('No product SKUs provided')
     return
