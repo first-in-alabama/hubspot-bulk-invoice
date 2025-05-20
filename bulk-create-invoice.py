@@ -133,7 +133,7 @@ def get_company_ids(client: Client, domains: set[str]) -> dict:
 '''
 Using the product SKUs, find the Product IDs
 '''
-def get_product_ids(client: Client, skus: set[str]) -> dict:
+def get_product_ids(client: Client, skus: set[tuple[str]]) -> dict:
   return {}
 
 
@@ -195,7 +195,7 @@ def main(file_path: str):
     print('No team details provided')
     return
   
-  product_skus = set(entries[SKU].tolist())
+  product_skus = set(list(zip(entries[SKU],entries[PROGRAM])))
   if len(product_skus) == 0:
     print('No product SKUs provided')
     return
