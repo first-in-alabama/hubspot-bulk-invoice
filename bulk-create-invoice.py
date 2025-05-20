@@ -127,6 +127,10 @@ def get_rows(file_path: str) -> pandas.DataFrame:
     return None
   
   df[EMAIL] = df[EMAIL].str.lower()
+  df[DESCRIPTION] = df[DESCRIPTION].fillna('')
+
+  df[CREATED_DATE] = df[CREATED_DATE].dt.tz_localize('America/Chicago')
+  df[DUE_DATE] = df[DUE_DATE].dt.tz_localize('America/Chicago')
 
   print('Importing', df.shape[0], 'row(s)!')
 
@@ -155,6 +159,7 @@ def get_contact_ids(client: Client, emails: set[str]) -> dict:
   if api_response is None: return None
   if hasattr(api_response, 'errors') or not hasattr(api_response, 'results'): 
     print('There were one or more errors associated with the Contact FETCH call')
+    pprint(api_response)
     return None
   
   results = None
@@ -208,6 +213,7 @@ def get_company_ids(client: Client, domains: set[str]) -> dict:
   if api_response is None: return None
   if hasattr(api_response, 'errors') or not hasattr(api_response, 'results'): 
     print('There were one or more errors associated with the Company FETCH call')
+    pprint(api_response)
     return None
   
   results = None
@@ -267,6 +273,7 @@ def get_product_ids(client: Client, skus: set[tuple[str]]) -> dict:
   if api_response is None: return None
   if hasattr(api_response, 'errors') or not hasattr(api_response, 'results'): 
     print('There were one or more errors associated with the Product FETCH call')
+    pprint(api_response)
     return None
   
   results = None
@@ -294,16 +301,129 @@ def get_product_ids(client: Client, skus: set[tuple[str]]) -> dict:
 
 
 '''
-Using the quantities, product IDs, and descriptions, create the needed line items.
+Using the companies, contacts, and other properties, create the requested invoices.
 '''
-def create_line_items(client: Client, rows: list, products: dict) -> dict:
-  return {}
+def create_invoices(client: Client, invoice_values: list[dict]) -> dict:
+  print('Asking HubSpot to generate the Invoices...')
+  invoice_body = {
+    'inputs': [
+      {
+        'properties': {
+          "hs_currency": 'USD',
+      		"hs_invoice_date": x['created'],
+		      "hs_due_date": x['due']
+        },
+        'associations': [
+          {
+            'to': {
+              'id': x['contact']
+            },
+            'types': [
+              {
+                'associationCategory': 'HUBSPOT_DEFINED',
+                'associationTypeId': 177
+              }
+            ]
+          },
+          {
+            'to': {
+              'id': x['company']
+            },
+            'types': [
+              {
+                'associationCategory': 'HUBSPOT_DEFINED',
+                'associationTypeId': 179
+              }
+            ]
+          }
+        ]
+      }
+    for x in invoice_values]
+  }
+
+  api_response = None
+  try:
+    api_response = client.crm.commerce.invoices.batch_api.create(batch_input_simple_public_object_batch_input_for_create=invoice_body)
+  except Exception as e:
+    pprint(e)
+    print('Unable to generate the Invoices from HubSpot')
+    api_response = None
+
+  if api_response is None: return None
+  if hasattr(api_response, 'errors') or not hasattr(api_response, 'results'): 
+    print('There were one or more errors associated with the Invoice CREATE call')
+    pprint(api_response)
+    return None
+  
+  invoice_ids = None
+  try:
+    invoice_ids = set([ int(x.id) for x in api_response.results if not x.archived ])
+  except:
+    print('One or more errors occurred when creating Invoices')
+    invoice_ids = None
+
+  if invoice_ids is None or len(invoice_ids) == 0:
+    print('Could not create any Invoice')
+    return None
+  
+  if len(invoice_values) != len(invoice_ids):
+    print('One or more invoices was not generated. Please clear the records from HubSpot, check your data source, and try again')
+    return None
+  
+  associations_body = {
+    'inputs': [
+      {
+        'id': x
+      } for x in invoice_ids
+    ]
+  }
+  
+  invoice_to_contacts = {}
+  try:
+    contact_result = client.crm.associations.batch_api.read('0-53', '0-1', batch_input_public_object_id=associations_body) 
+    for result in contact_result.results:
+      values = result.to_dict()
+      invoice_to_contacts[int(values['_from']['id'])] = int(values['to'][0]['id'])
+  except Exception as e:
+    pprint(e)
+    print('Unable to match contacts to invoices. Please clear the Invoices from HubSpot, check your data source, and try again')
+    return None
+  
+  if len(invoice_to_contacts.keys()) == 0:
+    print('Unable to match contacts to invoices. Please clear the Invoices from HubSpot, check your data source, and try again')
+    return None
+  
+  invoice_to_companies = {}
+  try:
+    company_result = client.crm.associations.batch_api.read('0-53', '0-2', batch_input_public_object_id=associations_body) 
+    for result in company_result.results:
+      values = result.to_dict()
+      invoice_to_companies[int(values['_from']['id'])] = int(values['to'][0]['id'])
+  except Exception as e:
+    pprint(e)
+    print('Unable to match companies to invoices. Please clear the Invoices from HubSpot, check your data source, and try again')
+    return None
+  
+  if len(invoice_to_companies.keys()) == 0:
+    print('Unable to match companies to invoices. Please clear the Invoices from HubSpot, check your data source, and try again')
+    return None
+  
+  if len(invoice_to_contacts.keys()) != len(invoice_to_companies.keys()):
+    print('There was a discrepancy between the invoice to contacts and companies mappings. Please clear the Invoices from HubSpot, check your data source, and try again')
+    return None
+  
+  associations_lookup = {}
+  for invoice_id in invoice_ids:
+    associations_lookup[invoice_id] = (invoice_to_companies[invoice_id], invoice_to_contacts[invoice_id])
+
+  return { v: k for k, v in associations_lookup.items() }
 
 
 '''
-Using the companies, contacts, line items, and other properties, create the requested invoices.
+Using the quantities, product IDs, descriptions, and invoices, create the needed line items.
 '''
-def create_invoices(client: Client, rows: list, line_items: dict, companies: dict, contacts: dict) -> dict:
+def create_line_items(client: Client, entry_keys: tuple[str], products: dict, invoices: dict) -> dict:
+  print('Asking HubSpot to apply the Line Items to invoices...')
   return {}
 
 
@@ -376,21 +496,30 @@ def main(file_path: str):
     print('Unable to lookup the requested products')
     return
   
-  # 5. Create all line items. Exit on error but report successes.
-  line_items = create_line_items(api_client, entries, products)
-  if line_items is None:
-    print('Unable to create the needed line items')
-    return
-  
-  # 6. Create all invoices as drafts. Exit on error but report successes.
-  invoices = create_invoices(api_client, entries, line_items, companies, contacts)
-  if invoices is None:
-    print('Unable to create invoices')
-    return
-  
-  pprint(invoices)
+  # 5. Create all invoices as drafts. Exit on error but report successes.
+  invoice_entry_keys = set(list(zip(entries[EMAIL], entries[PROGRAM].str.lower() + '-' + entries[TEAM_NUMBER].astype(int).astype(str) + '.org', entries[CREATED_DATE], entries[DUE_DATE])))
+  invoice_hubspot_values = [
+    {
+      'contact': str(contacts[x[0]]), 
+      'company': str(companies[x[1]]),
+      'created': int(x[2].timestamp() * 1000), 
+      'due': int(x[3].timestamp() * 1000) 
+    } 
+    for x in invoice_entry_keys
+  ]
 
-  print('Bulk upload complete!')
+  invoices = create_invoices(api_client, invoice_hubspot_values)
+  
+  # 6. Create all line items for invoices. Exit on error but report successes.
+  # line_item_keys = list(zip(entries[SKU], entries[QUANTITY], entries[DESCRIPTION]))
+  # line_items = create_line_items(api_client, line_item_keys, products)
+  # if line_items is None:
+  #   print('Unable to create the needed line items')
+  #   return
+  
+  # pprint(invoices)
+
+  # print('Bulk upload complete!')
 
 if __name__ == '__main__':
   parser = ArgumentParser()
