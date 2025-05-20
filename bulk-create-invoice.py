@@ -125,6 +125,8 @@ def get_rows(file_path: str) -> pandas.DataFrame:
   if (df[VALID] != SPREADSHEET_VALID_MESSAGE).any():
     print('One or more spreadsheet validations failed. Check the document and try again')
     return None
+  
+  df[EMAIL] = df[EMAIL].str.lower()
 
   print('Importing', df.shape[0], 'row(s)!')
 
@@ -339,7 +341,7 @@ def main(file_path: str):
     return
   
   # Parse out the key identifiers
-  email_addresses = set(entries[EMAIL].str.lower().tolist())
+  email_addresses = set(entries[EMAIL].tolist())
   if len(email_addresses) == 0:
     print('No emails provided')
     return
