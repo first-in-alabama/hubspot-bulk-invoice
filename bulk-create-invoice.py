@@ -111,7 +111,7 @@ def get_rows(file_path: str) -> pandas.DataFrame:
     print('One or more spreadsheet validations failed. Check the document and try again')
     return None
 
-  print('Importing', df.shape[0], 'row(s)')
+  print('Importing', df.shape[0], 'row(s)!')
 
   return df
 
@@ -120,7 +120,44 @@ def get_rows(file_path: str) -> pandas.DataFrame:
 Using the email addresses, find the Contact IDs
 '''
 def get_contact_ids(client: Client, emails: set[str]) -> dict:
-  return {}
+  print('Asking HubSpot for Contact IDs...')
+  email_lookup = [{'id': email} for email in emails]
+  body = {
+    'idProperty': 'email',
+    'inputs': email_lookup
+  }
+
+  api_response = None
+  try:
+    api_response = client.crm.contacts.batch_api.read(batch_read_input_simple_public_object_id=body)
+  except Exception as e:
+    pprint(e)
+    print('Unable to query the Contacts from HubSpot')
+    api_response = None
+
+  if api_response is None: return None
+  if hasattr(api_response, 'errors') or not hasattr(api_response, 'results'): 
+    print('There were one or more errors associated with the Contact FETCH call')
+    return None
+  
+  results = None
+  try:
+    results = { x.properties['email']: x.id for x in api_response.results if not x.archived }
+  except:
+    print('One or more errors occurred when reading the Contact lookup results')
+    results = None
+
+  if results is None or len(results) == 0:
+    print('Could not find any Contacts')
+    return None
+
+  missing_emails = emails.difference(set(results.keys()))
+  if missing_emails:
+    print('One or more emails could not be found for active contacts:', ', '.join(missing_emails))
+    return None
+
+  print('Retrieved Contact IDs!')
+  return results
 
 
 '''
