@@ -164,8 +164,53 @@ def get_contact_ids(client: Client, emails: set[str]) -> dict:
 Using the company domains, find the Company IDs
 '''
 def get_company_ids(client: Client, domains: set[str]) -> dict:
-  return {}
+  print('Asking HubSpot for Company IDs...')
+  body = {
+    'filterGroups': [
+      {
+        'filters': [
+          {
+            'propertyName': 'domain',
+            'operator': 'IN',
+            'values': list(domains)
+          }
+        ]
+      }
+    ],
+    'properties': ['id', 'domain']
+  }
 
+  api_response = None
+  try:
+    api_response = client.crm.companies.search_api.do_search(public_object_search_request=body)
+  except Exception as e:
+    pprint(e)
+    print('Unable to query the Companies from HubSpot')
+    api_response = None
+
+  if api_response is None: return None
+  if hasattr(api_response, 'errors') or not hasattr(api_response, 'results'): 
+    print('There were one or more errors associated with the Company FETCH call')
+    return None
+  
+  results = None
+  try:
+    results = { x.properties['domain']: x.id for x in api_response.results if not x.archived }
+  except:
+    print('One or more errors occurred when reading the Company lookup results')
+    results = None
+
+  if results is None or len(results) == 0:
+    print('Could not find any Company')
+    return None
+  
+  missing_domains = domains.difference(set(results.keys()))
+  if missing_domains:
+    print('One or more domains could not be found for active companies:', ', '.join(missing_domains))
+    return None
+
+  print('Retrieved Company IDs!')
+  return results
 
 '''
 Using the product SKUs, find the Product IDs
@@ -222,17 +267,17 @@ def main(file_path: str):
     return
   
   # Parse out the key identifiers
-  email_addresses = set(entries[EMAIL].tolist())
+  email_addresses = set(entries[EMAIL].str.lower().tolist())
   if len(email_addresses) == 0:
     print('No emails provided')
     return
 
-  team_domains = set([x for x in entries[PROGRAM] + '-' + entries[TEAM_NUMBER].astype(int).astype(str) + '.org'])
+  team_domains = set([x for x in entries[PROGRAM].str.lower() + '-' + entries[TEAM_NUMBER].astype(int).astype(str) + '.org'])
   if len(team_domains) == 0:
     print('No team details provided')
     return
   
-  product_skus = set(list(zip(entries[SKU],entries[PROGRAM])))
+  product_skus = set(list(zip(entries[SKU].str.lower(), entries[PROGRAM].str.lower())))
   if len(product_skus) == 0:
     print('No product SKUs provided')
     return
