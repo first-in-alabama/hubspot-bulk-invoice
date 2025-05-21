@@ -2,7 +2,7 @@ from pprint import pprint
 from hubspot import Client
 import requests
 
-from invoice_input import InvoiceIdentifier, InvoiceInput, SkuIdentifier
+from invoice_input import InvoiceIdentifier, InvoiceInput, LineItemInput, SkuIdentifier
 
 SEASONS_API = 'https://my.firstinspires.org/usfirstapi/seasons/search'
 
@@ -122,7 +122,7 @@ def get_company_ids(client: Client, domains: set[str]) -> dict[str, int]:
     return results
 
 
-def get_product_ids(client: Client, skus: set[SkuIdentifier]) -> dict:
+def get_product_ids(client: Client, skus: set[SkuIdentifier]) -> dict[str, int]:
     '''Using the product SKUs, find the Product IDs'''
     print('Asking HubSpot for Product IDs...')
     program_codes = set([x.program for x in skus])
@@ -163,10 +163,10 @@ def get_product_ids(client: Client, skus: set[SkuIdentifier]) -> dict:
         pprint(api_response)
         return None
 
-    results = None
+    results: dict[str, int] = None
     try:
         results = {
-            x.properties['hs_sku']: x.id
+            x.properties['hs_sku']: int(x.id)
             for x in api_response.results
             if not x.archived and str(current_seasons[x.properties['program']]) == x.properties['season_year']
         }
@@ -277,8 +277,81 @@ def create_invoices(client: Client, invoice_values: list[InvoiceInput]) -> dict[
 
     associations_lookup: dict[int, InvoiceIdentifier] = {}
     for invoice_id in invoice_ids:
-        associations_lookup[invoice_id] = InvoiceIdentifier(
-            invoice_to_companies[invoice_id], invoice_to_contacts[invoice_id])
+        associations_lookup[invoice_id] = InvoiceIdentifier(invoice_to_contacts[invoice_id],
+                                                            invoice_to_companies[invoice_id])
 
     print('Generated', len(associations_lookup), 'Invoices!')
     return {v: k for k, v in associations_lookup.items()}
+
+
+def create_line_items(client: Client, line_items: list[LineItemInput], invoices: dict[InvoiceIdentifier, int]) -> set[int]:
+    '''Using the quantities, product IDs, descriptions, and invoices, create the needed line items.'''
+    print('Asking HubSpot to apply the Line Items to invoices...')
+    line_item_invoice_keys = set([x.invoice_identifier() for x in line_items])
+    invoice_keys = set(invoices.keys())
+
+    if len(line_item_invoice_keys.symmetric_difference(invoice_keys)) > 0:
+        print('Could not match all invoices with all line items. Please clear the invoices from HubSpot, check your data source, and try again')
+        return None
+
+    body = {
+        'inputs': [
+            {
+                'properties': {
+                    'quantity': x.quantity,
+                    'hs_product_id': x.product,
+                    'description': x.description
+                },
+                'associations': [
+                    {
+                        'types': [
+                            {
+                                'associationCategory': 'HUBSPOT_DEFINED',
+                                'associationTypeId': 410
+                            }
+                        ],
+                        'to': {
+                            'id': invoices[x.invoice_identifier()]
+                        }
+                    }
+                ]
+            }
+            for x
+            in line_items
+        ]
+    }
+
+    api_response = None
+    try:
+        api_response = client.crm.line_items.batch_api.create(
+            batch_input_simple_public_object_batch_input_for_create=body)
+    except Exception as e:
+        pprint(e)
+        print('Unable to apply the Line Items to the Invoices in HubSpot. Please clear the invoices from HubSpot, check your data source, and try again')
+        api_response = None
+
+    if api_response is None:
+        return None
+    if hasattr(api_response, 'errors') or not hasattr(api_response, 'results'):
+        print('There were one or more errors associated with the Line Item CREATE call. Please clear the invoices from HubSpot, check your data source, and try again')
+        pprint(api_response)
+        return None
+
+    line_item_ids = None
+    try:
+        line_item_ids = set([int(x.id)
+                             for x in api_response.results if not x.archived])
+    except:
+        print('One or more errors occurred when creating Line Items. Please clear the invoices from HubSpot, check your data source, and try again')
+        line_item_ids = None
+
+    if line_item_ids is None or len(line_item_ids) == 0:
+        print('Could not create any Line Items')
+        return None
+
+    if len(line_item_ids) != len(line_items):
+        print('One or more line items was not generated. Please clear the invoices from HubSpot, check your data source, and try again')
+        return None
+
+    print('Line Items created and applied!')
+    return line_item_ids

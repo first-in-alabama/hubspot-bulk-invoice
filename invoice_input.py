@@ -28,6 +28,38 @@ class InvoiceIdentifier(object):
         return hash((self.contact, self.company))
 
 
+class LineItemInput(object):
+    def __init__(self, contact: int, company: int, quantity: int, description: str, product: int):
+        self.__contact = contact
+        self.__company = company
+        self.__quantity = quantity
+        self.__description = description
+        self.__product = product
+
+    @property
+    def contact(self):
+        return self.__contact
+
+    @property
+    def company(self):
+        return self.__company
+
+    @property
+    def quantity(self):
+        return self.__quantity
+
+    @property
+    def description(self):
+        return self.__description
+
+    @property
+    def product(self):
+        return self.__product
+
+    def invoice_identifier(self) -> InvoiceIdentifier:
+        return InvoiceIdentifier(self.contact, self.company)
+
+
 class SkuIdentifier(object):
     def __init__(self, sku: str, program: str):
         self.__sku = sku

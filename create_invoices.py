@@ -1,17 +1,12 @@
 from argparse import ArgumentParser
 import os
+from pprint import pprint
 from hubspot import Client
-from api import create_invoices, get_company_ids, get_contact_ids, get_product_ids
-from excel_import import CREATED_DATE_COL, DUE_DATE_COL, EMAIL_COL, PROGRAM_COL, SKU_COL, TEAM_NUMBER_COL, get_rows
-from invoice_input import COMPANY_DOMAIN_TEMPLATE, InvoiceEntryRow, SkuIdentifier
+from api import create_invoices, create_line_items, get_company_ids, get_contact_ids, get_product_ids
+from excel_import import CREATED_DATE_COL, DESCRIPTION_COL, DUE_DATE_COL, EMAIL_COL, PROGRAM_COL, QUANTITY_COL, SKU_COL, TEAM_NUMBER_COL, get_rows
+from invoice_input import COMPANY_DOMAIN_TEMPLATE, InvoiceEntryRow, LineItemInput, SkuIdentifier
 
 TOKEN_PATH = './secrets/HUBSPOT_API_KEY'
-
-
-def create_line_items(client: Client, entry_keys: tuple[str], products: dict, invoices: dict) -> dict:
-    '''Using the quantities, product IDs, descriptions, and invoices, create the needed line items.'''
-    print('Asking HubSpot to apply the Line Items to invoices...')
-    return {}
 
 
 def get_hubspot_api_token() -> str:
@@ -97,15 +92,21 @@ def main(file_path: str):
         return
 
     # 6. Create all line items for invoices. Exit on error but report successes.
-    # line_item_keys = list(zip(entries[SKU], entries[QUANTITY], entries[DESCRIPTION]))
-    # line_items = create_line_items(api_client, line_item_keys, products)
-    # if line_items is None:
-    #   print('Unable to create the needed line items')
-    #   return
+    line_item_inputs = [
+        LineItemInput(contacts[email], companies[COMPANY_DOMAIN_TEMPLATE.format(
+            str(prog).lower(), number)], int(qty), desc, products[sku])
+        for sku, qty, desc, prog, number, email in
+        zip(entries[SKU_COL], entries[QUANTITY_COL].astype(int), entries[DESCRIPTION_COL], entries[PROGRAM_COL].astype(
+            str), entries[TEAM_NUMBER_COL].astype(int).astype(str), entries[EMAIL_COL])
+    ]
 
-    # pprint(invoices)
+    line_items = create_line_items(api_client, line_item_inputs, invoices)
+    if line_items is None:
+        print('Unable to create the needed line items')
+        return
 
-    # print('Bulk upload complete!')
+    print('Bulk upload complete for the invoices listed below!')
+    pprint([x for x in invoices.values()])
 
 
 if __name__ == '__main__':
