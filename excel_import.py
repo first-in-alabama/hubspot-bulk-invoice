@@ -19,12 +19,8 @@ INVOICE_END_DATE = pandas.to_datetime('2026-04-30')
 PROGRAMS = set(['FRC', 'FTC', 'FLL', 'JFLL'])
 
 
-'''
-Parse the entries in the spreadsheet template
-'''
-
-
 def get_rows(file_path: str) -> pandas.DataFrame:
+    '''Parse the entries in the spreadsheet template'''
     print('Reading spreadsheet...')
     df = None
     try:

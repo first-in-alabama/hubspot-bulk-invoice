@@ -8,22 +8,14 @@ from invoice_input import COMPANY_DOMAIN_TEMPLATE, InvoiceEntryRow, SkuIdentifie
 TOKEN_PATH = './secrets/HUBSPOT_API_KEY'
 
 
-'''
-Using the quantities, product IDs, descriptions, and invoices, create the needed line items.
-'''
-
-
 def create_line_items(client: Client, entry_keys: tuple[str], products: dict, invoices: dict) -> dict:
+    '''Using the quantities, product IDs, descriptions, and invoices, create the needed line items.'''
     print('Asking HubSpot to apply the Line Items to invoices...')
     return {}
 
 
-'''
-Extract token from secrets file.
-'''
-
-
 def get_hubspot_api_token() -> str:
+    '''Extract token from secrets file.'''
     api_token = None
     try:
         with open(TOKEN_PATH) as f:
@@ -33,12 +25,8 @@ def get_hubspot_api_token() -> str:
     return api_token if api_token is None else api_token.strip()
 
 
-'''
-Execute the sequence of steps to bulk-create invoices from the template spreadsheet.
-'''
-
-
 def main(file_path: str):
+    '''Execute the sequence of steps to bulk-create invoices from the template spreadsheet.'''
     if not os.path.isfile(file_path):
         print('Provided file (', file_path, ') does not exist', sep='')
         return

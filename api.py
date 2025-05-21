@@ -7,12 +7,8 @@ from invoice_input import InvoiceIdentifier, InvoiceInput, SkuIdentifier
 SEASONS_API = 'https://my.firstinspires.org/usfirstapi/seasons/search'
 
 
-'''
-Get the current seasons for all FIRST programs
-'''
-
-
-def fetch_first_seasons() -> dict:
+def fetch_first_seasons() -> dict[str, int]:
+    '''Get the current seasons for all FIRST programs'''
     seasons = None
     try:
         seasons = {s['ProgramCode']: int(s['SeasonYearStart']) for s in requests.get(
@@ -23,12 +19,8 @@ def fetch_first_seasons() -> dict:
     return seasons
 
 
-'''
-Using the email addresses, find the Contact IDs
-'''
-
-
 def get_contact_ids(client: Client, emails: set[str]) -> dict[str, int]:
+    '''Using the email addresses, find the Contact IDs'''
     print('Asking HubSpot for Contact IDs...')
     email_lookup = [{'id': email} for email in emails]
     body = {
@@ -74,12 +66,8 @@ def get_contact_ids(client: Client, emails: set[str]) -> dict[str, int]:
     return results
 
 
-'''
-Using the company domains, find the Company IDs
-'''
-
-
 def get_company_ids(client: Client, domains: set[str]) -> dict[str, int]:
+    '''Using the company domains, find the Company IDs'''
     print('Asking HubSpot for Company IDs...')
     body = {
         'filterGroups': [
@@ -134,12 +122,8 @@ def get_company_ids(client: Client, domains: set[str]) -> dict[str, int]:
     return results
 
 
-'''
-Using the product SKUs, find the Product IDs
-'''
-
-
 def get_product_ids(client: Client, skus: set[SkuIdentifier]) -> dict:
+    '''Using the product SKUs, find the Product IDs'''
     print('Asking HubSpot for Product IDs...')
     program_codes = set([x.program for x in skus])
     sku_keys = set([x.sku for x in skus])
@@ -203,12 +187,8 @@ def get_product_ids(client: Client, skus: set[SkuIdentifier]) -> dict:
     return results
 
 
-'''
-Using the companies, contacts, and other properties, create the requested invoices.
-'''
-
-
 def create_invoices(client: Client, invoice_values: list[InvoiceInput]) -> dict[InvoiceIdentifier, int]:
+    '''Using the companies, contacts, and other properties, create the requested invoices.'''
     print('Asking HubSpot to generate the Invoices...')
     invoice_body = {
         'inputs': [
