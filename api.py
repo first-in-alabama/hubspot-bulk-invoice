@@ -122,7 +122,7 @@ def get_company_ids(client: Client, domains: set[str]) -> dict[str, int]:
     return results
 
 
-def get_product_ids(client: Client, skus: set[SkuIdentifier]) -> dict[str, int]:
+def get_product_ids(client: Client, skus: list[SkuIdentifier]) -> dict[SkuIdentifier, int]:
     '''Using the product SKUs, find the Product IDs'''
     print('Asking HubSpot for Product IDs...')
     program_codes = set([x.program for x in skus])
@@ -163,28 +163,37 @@ def get_product_ids(client: Client, skus: set[SkuIdentifier]) -> dict[str, int]:
         pprint(api_response)
         return None
 
-    results: dict[str, int] = None
+    results: dict[int, SkuIdentifier] = None
     try:
         results = {
-            x.properties['hs_sku']: int(x.id)
+            int(x.id): SkuIdentifier(str(x.properties['hs_sku']), str(x.properties['program']))
             for x in api_response.results
             if not x.archived and str(current_seasons[x.properties['program']]) == x.properties['season_year']
         }
     except:
-        print('One or more errors occurred when reading the Product lookup results')
+        print('One or more errors occurred when reading the Product lookup results. Verify that all SKUs are for the correct program and season')
         results = None
 
     if results is None or len(results) == 0:
         print('Could not find any Product')
         return None
 
-    missing_skus = sku_keys.difference(set(results.keys()))
+    missing_skus = set(skus).difference(set(results.values()))
     if missing_skus:
-        print('One or more SKUs could not be found for active products (for the current program season). Check season and spelling (SKUs are case sensitive):', ', '.join(missing_skus))
+        print(
+            'One or more SKUs/Program combinations could not be found for active products.')
+        print(
+            'It could be that the SKU does not exist, so double check the HubSpot listing.')
+        print('It could also be that the SKU is not valid for the current season.')
+        print('The current season is based on the year when the program kicks off (e.g., FRC January, FTC September)')
+        print('Verify that the missing SKUs are aligned with the correct program in the spreadsheet.')
+        print('Check these records (SKUs are case sensitive).')
+        print('\n'.join(['\t{0} in {1}'.format(x.sku, x.program)
+              for x in missing_skus]))
         return None
 
     print('Retrieved Product IDs!')
-    return results
+    return {v: k for k, v in results.items()}
 
 
 def create_invoices(client: Client, invoice_values: list[InvoiceInput]) -> dict[InvoiceIdentifier, int]:

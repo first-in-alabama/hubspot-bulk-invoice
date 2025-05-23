@@ -52,8 +52,8 @@ def main(file_path: str):
         print('No team details provided')
         return
 
-    product_skus = set([SkuIdentifier(str(x), str(y)) for x, y in zip(
-        entries[SKU_COL].astype(str), entries[PROGRAM_COL].astype(str))])
+    product_skus = [entry for entry in set([SkuIdentifier(str(x), str(y)) for x, y in zip(
+        entries[SKU_COL].astype(str), entries[PROGRAM_COL].astype(str))])]
     if len(product_skus) == 0:
         print('No product SKUs provided')
         return
@@ -92,13 +92,23 @@ def main(file_path: str):
         return
 
     # 6. Create all line items for invoices. Exit on error but report successes.
-    line_item_inputs = [
-        LineItemInput(contacts[email], companies[COMPANY_DOMAIN_TEMPLATE.format(
-            str(prog).lower(), number)], int(qty), desc, products[sku])
-        for sku, qty, desc, prog, number, email in
-        zip(entries[SKU_COL], entries[QUANTITY_COL].astype(int), entries[DESCRIPTION_COL], entries[PROGRAM_COL].astype(
-            str), entries[TEAM_NUMBER_COL].astype(int).astype(str), entries[EMAIL_COL])
-    ]
+    line_item_inputs: list[LineItemInput] = None
+    try:
+        line_item_inputs = [
+            LineItemInput(contacts[email], companies[COMPANY_DOMAIN_TEMPLATE.format(
+                str(prog).lower(), number)], int(qty), desc, products[SkuIdentifier(str(sku), str(prog).upper())])
+            for sku, qty, desc, prog, number, email in
+            zip(entries[SKU_COL], entries[QUANTITY_COL].astype(int), entries[DESCRIPTION_COL], entries[PROGRAM_COL].astype(
+                str), entries[TEAM_NUMBER_COL].astype(int).astype(str), entries[EMAIL_COL])
+        ]
+    except:
+        print('Unable to parse line item entries from spreadsheet')
+        print('Please check the errors above and try again')
+        return
+
+    if len(line_item_inputs) != entries.shape[0]:
+        print('One or more line items did not translate correctly')
+        return
 
     line_items = create_line_items(api_client, line_item_inputs, invoices)
     if line_items is None:
